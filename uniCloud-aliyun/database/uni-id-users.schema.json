@@ -1,0 +1,41 @@
+{
+	"bsonType": "object",
+	"required": [],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "用户ID"
+		},
+		"username": {
+			"bsonType": "string",
+			"description": "用户名",
+			"index": true
+		},
+		"password": {
+			"bsonType": "string",
+			"description": "密码（加密存储）"
+		},
+		"mobile": {
+			"bsonType": "string",
+			"description": "手机号",
+			"index": true
+		},
+		"register_date": {
+			"bsonType": "number",
+			"description": "注册时间"
+		},
+		"last_login_date": {
+			"bsonType": "number",
+			"description": "最后登录时间"
+		},
+		"token": {
+			"bsonType": "array",
+			"description": "用户token列表"
+		}
+	}
+}

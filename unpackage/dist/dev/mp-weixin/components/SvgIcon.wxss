@@ -1,0 +1,12 @@
+
+.svg-icon.data-v-4c110535 {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.icon-content.data-v-4c110535 {
+	font-size: inherit;
+	line-height: 1;
+	font-family: system-ui, -apple-system, sans-serif;
+	font-weight: 300;
+}

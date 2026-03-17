@@ -1,0 +1,10 @@
+{
+	"passwordSecret": "customer-flow-analysis-secret-key-2024",
+	"tokenSecret": "customer-flow-token-secret-2024",
+	"tokenExpiresIn": 604800,
+	"passwordErrorLimit": 6,
+	"passwordErrorRetryTime": 3600,
+	"service": {
+		"sms": {}
+	}
+}

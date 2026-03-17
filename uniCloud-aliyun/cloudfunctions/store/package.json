@@ -1,0 +1,9 @@
+{
+	"name": "store",
+	"version": "1.0.0",
+	"description": "店铺管理云对象",
+	"main": "index.obj.js",
+	"extensions": {
+		"uni-cloud-jql": {}
+	}
+}

@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>智能客流分析系统 - 最终修复版</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script>
+tailwind.config = {
+theme: {
+extend: {
+colors: {
+primary: '#003366',
+secondary: '#004d99',
+accent: '#0066cc',
+surface: '#F4F6F8',
+collector: {
+bg: '#0a0a0a',
+surface: '#1a1a1a',
+accent: '#22c55e'
+}
+},
+fontFamily: {
+sans: ['Inter', 'system-ui', 'sans-serif'],
+}
+}
+}
+}
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+body { 
+  font-family: 'Inter', sans-serif; 
+  background-color: #e0e5ec; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  min-height: 100vh;
+}
+
+.phone-container {
+  width: 375px;
+  height: 812px; 
+  background: #000;
+  border-radius: 40px;
+  padding: 12px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3), inset 0 0 0 2px #333;
+  position: relative;
+  overflow: hidden;
+}
+
+.notch {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 150px;
+  height: 30px;
+  background: #000;
+  border-radius: 0 0 20px 20px;
+  z-index: 999;
+}
+
+.screen {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border-radius: 30px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 页面转场动画 */
+.page { 
+  display: none; 
+  position: absolute; 
+  top: 0; left: 0; width: 100%; height: 100%; 
+  flex-direction: column; 
+  opacity: 0;
+  transform: translateX(20px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+.page.active { 
+  display: flex; 
+  opacity: 1; 
+  transform: translateX(0); 
+  pointer-events: auto;
+  z-index: 10;
+}
+.page.exiting {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+/* 模态框/弹窗层 */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 50;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.modal-overlay.show {
+  display: flex;
+  opacity: 1;
+}
+.modal-content {
+  background: white;
+  border-radius: 1rem;
+  width: 80%;
+  max-width: 320px;
+  overflow: hidden;
+  transform: scale(0.9);
+  transition: transform 0.2s;
+}
+.modal-overlay.show .modal-content {
+  transform: scale(1);
+}
+
+/* 通用样式 */
+.glass {
+background: rgba(255, 255, 255, 0.85);
+backdrop-filter: blur(20px);
+-webkit-backdrop-filter: blur(20px);
+}
+.glass-dark {
+background: rgba(0, 0, 0, 0.6);
+backdrop-filter: blur(20px);
+-webkit-backdrop-filter: blur(20px);
+}
+.glass-card {
+background: rgba(255, 255, 255, 0.15);
+backdrop-filter: blur(30px);
+-webkit-backdrop-filter: blur(30px);
+border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@keyframes breathe { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@keyframes countUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes scanline {
+  0% { top: -10%; }
+  100% { top: 110%; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.breathe { animation: breathe 2s ease-in-out infinite; }
+.count-up { animation: countUp 0.4s ease-out forwards; }
+
+/* 骨架屏 */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.camera-frame {
+position: relative;
+width: 100%;
+height: 100%;
+background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+overflow: hidden; 
+}
+.detection-dot {
+position: absolute;
+width: 10px;
+height: 10px;
+background: #ef4444;
+border-radius: 50%;
+transform: translate(-50%, -50%);
+box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+transition: all 0.2s ease;
+}
+/* 扫描线 */
+.scan-line {
+  position: absolute;
+  left: 0; width: 100%; height: 2px;
+  background: rgba(34, 197, 94, 0.5);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+  animation: scanline 3s linear infinite;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar { width: 0; background: transparent; }
+
+.input-field {
+transition: all 0.3s ease;
+background: rgba(255, 255, 255, 0.1);
+border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.input-field:focus {
+background: rgba(255, 255, 255, 0.2);
+border-color: rgba(255, 255, 255, 0.5);
+box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+outline: none;
+}
+.btn-primary {
+background: linear-gradient(135deg, #ffffff 0%, #f0f2f5 100%);
+color: #003366;
+transition: all 0.3s ease;
+}
+.btn-primary:active { transform: scale(0.98); }
+
+.status-bar { height: 44px; padding-top: 10px; }
+.home-indicator { width: 134px; height: 5px; background: rgba(0,0,0,0.2); border-radius: 3px; margin: 8px auto; }
+
+.screen-off-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 200;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.screen-off-overlay.active { display: flex; }
+
+.nav-back-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+}
+.collector-back-btn {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.8);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 权限引导遮罩 */
+.permission-guide {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.9);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+}
+</style>
+</head>
+<body>
+
+<div class="phone-container">
+  <div class="notch"></div> 
+  
+  <div class="screen">
+    
+    <!-- 1. 登录/注册页面 -->
+    <div id="loginPage" class="page active">
+      <div class="absolute inset-0 bg-gradient-to-br from-primary via-secondary to-accent overflow-hidden">
+        <div class="absolute top-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
+        <div class="absolute bottom-0 right-0 w-80 h-80 bg-cyan-400/10 rounded-full blur-3xl translate-x-1/4 translate-y-1/4"></div>
+      </div>
+
+      <div class="relative z-10 flex flex-col h-full pt-12 pb-8 px-6">
+        <div class="text-center mb-8 mt-8">
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-xl mb-3 shadow-lg">
+            <i class="fas fa-chart-line text-3xl text-white"></i>
+          </div>
+          <h1 class="text-2xl font-bold text-white mb-1">智能客流分析</h1>
+          <p class="text-white/60 text-sm">AI驱动的商业洞察平台</p>
+        </div>
+
+        <div class="flex-1 flex flex-col justify-center">
+          <div class="glass-card rounded-2xl p-5 shadow-2xl">
+            <div class="flex mb-6 bg-white/10 rounded-xl p-1">
+              <button id="loginTabBtn" onclick="switchAuthTab('login')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all bg-white text-primary shadow-sm">登录</button>
+              <button id="registerTabBtn" onclick="switchAuthTab('register')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all text-white/70">注册</button>
+            </div>
+
+            <div id="loginForm">
+              <div class="space-y-3">
+                <div class="relative">
+                  <i class="fas fa-mobile-alt absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm"></i>
+                  <input type="tel" placeholder="请输入手机号" maxlength="11" class="input-field w-full pl-9 pr-3 py-2.5 rounded-lg text-white text-sm placeholder-white/40">
+                </div>
+                <div class="relative">
+                  <i class="fas fa-lock absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm"></i>
+                  <input type="password" placeholder="请输入密码" class="input-field w-full pl-9 pr-3 py-2.5 rounded-lg text-white text-sm placeholder-white/40">
+                </div>
+                <div class="flex justify-end">
+                  <!-- 修复：忘记密码按钮 -->
+                  <a href="javascript:void(0);" onclick="handleForgotPassword()" class="text-xs text-white/60 hover:text-white">忘记密码?</a>
+                </div>
+                <button onclick="handleLogin()" class="btn-primary w-full py-2.5 rounded-lg font-semibold text-sm mt-1">
+                  登录
+                </button>
+              </div>
+
+              <div class="mt-5 flex items-center">
+                <div class="flex-1 h-px bg-white/20"></div>
+                <span class="px-3 text-xs text-white/40">其他方式</span>
+                <div class="flex-1 h-px bg-white/20"></div>
+              </div>
+
+              <div class="mt-4 flex justify-center">
+                <button onclick="handleWechatLogin()" class="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center hover:bg-green-500/30 transition-colors group">
+                  <i class="fab fa-weixin text-xl text-green-400 group-hover:scale-110 transition-transform"></i>
+                </button>
+              </div>
+            </div>
+
+            <div id="registerForm" class="hidden">
+              <div class="space-y-3">
+                <div class="relative">
+                  <i class="fas fa-mobile-alt absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm"></i>
+                  <input type="tel" placeholder="请输入手机号" maxlength="11" class="input-field w-full pl-9 pr-3 py-2.5 rounded-lg text-white text-sm placeholder-white/40">
+                </div>
+                <div class="relative">
+                  <i class="fas fa-shield-alt absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm"></i>
+                  <input type="text" placeholder="验证码" maxlength="6" class="input-field w-full pl-9 pr-20 py-2.5 rounded-lg text-white text-sm placeholder-white/40">
+                  <!-- 修复：获取验证码按钮 -->
+                  <button id="sendCodeBtn" onclick="sendCode()" class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-white/20 rounded-md text-xs text-white font-medium transition-colors hover:bg-white/30">
+                    获取
+                  </button>
+                </div>
+                <div class="relative">
+                  <i class="fas fa-lock absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm"></i>
+                  <input type="password" placeholder="设置密码" class="input-field w-full pl-9 pr-3 py-2.5 rounded-lg text-white text-sm placeholder-white/40">
+                </div>
+                <button onclick="handleRegister()" class="btn-primary w-full py-2.5 rounded-lg font-semibold text-sm mt-1">
+                  注册
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="text-center text-white/30 text-xs mt-auto">© 2023 版权所有</p>
+      </div>
+    </div>
+
+    <!-- 2. 模式选择页 -->
+    <div id="modeSelectPage" class="page">
+      <div class="absolute inset-0 bg-gradient-to-br from-primary via-secondary to-accent"></div>
+      <div class="absolute inset-0 opacity-20">
+        <div class="absolute top-20 left-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
+        <div class="absolute bottom-20 right-10 w-60 h-60 bg-cyan-300 rounded-full blur-3xl"></div>
+      </div>
+      
+      <div class="relative z-10 flex flex-col h-full pt-12 pb-8 px-6">
+        <div class="flex items-center h-10 mb-4">
+           <button onclick="showPage('loginPage')" class="nav-back-btn">
+             <i class="fas fa-arrow-left"></i>
+           </button>
+        </div>
+
+        <div class="text-center mb-8">
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-xl mb-3">
+            <i class="fas fa-chart-line text-3xl text-white"></i>
+          </div>
+          <h1 class="text-2xl font-bold text-white mb-2">智能客流分析</h1>
+          <p class="text-white/70 text-sm">请选择您的使用角色</p>
+        </div>
+        
+        <div class="flex-1 flex flex-col justify-center space-y-3">
+          <button onclick="selectMode('collector')" class="w-full group relative overflow-hidden rounded-xl p-4 bg-white/10 backdrop-blur-xl border border-white/20 hover:bg-white/20 transition-all duration-300">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl bg-collector-accent/20 flex items-center justify-center">
+                <i class="fas fa-video text-xl text-collector-accent"></i>
+              </div>
+              <div class="text-left flex-1">
+                <h3 class="text-white font-semibold">采集端</h3>
+                <p class="text-white/60 text-xs">放置在店铺入口采集数据</p>
+              </div>
+              <i class="fas fa-chevron-right text-white/40 text-sm"></i>
+            </div>
+          </button>
+          
+          <button onclick="selectMode('admin')" class="w-full group relative overflow-hidden rounded-xl p-4 bg-white/10 backdrop-blur-xl border border-white/20 hover:bg-white/20 transition-all duration-300">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl bg-cyan-400/20 flex items-center justify-center">
+                <i class="fas fa-desktop text-xl text-cyan-400"></i>
+              </div>
+              <div class="text-left flex-1">
+                <h3 class="text-white font-semibold">管理端</h3>
+                <p class="text-white/60 text-xs">查看数据分析管理运营</p>
+              </div>
+              <i class="fas fa-chevron-right text-white/40 text-sm"></i>
+            </div>
+          </button>
+        </div>
+        <p class="text-center text-white/30 text-xs mt-auto">版本 1.0.0</p>
+      </div>
+    </div>
+
+    <!-- 3. 采集端页面 -->
+    <div id="collectorPage" class="page bg-collector-bg">
+      <div class="status-bar"></div> 
+      <div class="glass-dark px-3 py-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <button onclick="showPage('modeSelectPage')" class="collector-back-btn">
+            <i class="fas fa-arrow-left"></i>
+            <span>返回</span>
+          </button>
+          <div class="h-3 w-px bg-white/20"></div>
+          <div class="flex items-center gap-1.5">
+            <div class="w-1.5 h-1.5 rounded-full bg-collector-accent"></div>
+            <span class="text-white/90 text-xs font-medium">正门 A</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div id="networkStatus" class="flex items-center gap-1">
+            <div class="w-1.5 h-1.5 rounded-full bg-collector-accent"></div>
+            <span class="text-white/60 text-xs">网络正常</span>
+          </div>
+          <div class="text-white/60 text-xs flex items-center">
+            <i class="fas fa-clock mr-1 text-xs"></i>
+            <span id="runTime">00:00:00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 核心监控区 -->
+      <div class="flex-1 flex flex-col items-center justify-center p-3 relative">
+        <div class="camera-frame w-full rounded-xl overflow-hidden shadow-2xl border border-white/10 flex-grow relative">
+          <div class="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900">
+             <div class="absolute inset-0 opacity-20" style="background-image: url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23333%22 width=%22100%22 height=%22100%22/><circle cx=%2230%22 cy=%2240%22 r=%2215%22 fill=%22%23555%22/><circle cx=%2270%22 cy=%2235%22 r=%2212%22 fill=%22%23555%22/><rect x=%2220%22 y=%2260%22 width=%2260%22 height=%2230%22 rx=%225%22 fill=%22%23444%22/></svg>');"></div>
+          </div>
+          
+          <!-- 动态扫描线 -->
+          <div id="scanLine" class="scan-line" style="display: none;"></div>
+          
+          <!-- 识别框叠加层 -->
+          <div id="detectionLayer" class="absolute inset-0 z-10"></div>
+          
+          <div class="absolute top-2 left-2 glass-dark rounded-md px-2 py-1 flex items-center gap-1.5 z-20">
+            <div class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+            <span class="text-white/80 text-xs font-medium">识别中</span>
+          </div>
+          <div class="absolute bottom-2 right-2 glass-dark rounded-lg px-3 py-1.5 z-20">
+            <div class="text-white/60 text-xs">当前识别</div>
+            <div id="currentCount" class="text-xl font-bold text-white count-up">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部控制区 -->
+      <div class="p-4 space-y-3">
+        <div class="flex gap-3">
+          <button id="startBtn" onclick="toggleCollection()" class="flex-1 py-3 rounded-xl font-semibold text-sm transition-all duration-300 bg-collector-accent text-white hover:bg-collector-accent/80 active:scale-95">
+            <i class="fas fa-play mr-2"></i>开始采集
+          </button>
+          <button onclick="enableScreenOff()" class="px-4 py-3 rounded-xl bg-white/5 text-white/70 hover:bg-white/10 transition-all flex flex-col items-center justify-center border border-white/10">
+            <i class="fas fa-moon text-lg"></i>
+            <span class="text-xs mt-1">息屏</span>
+          </button>
+        </div>
+      </div>
+      <div class="home-indicator bg-white/20"></div>
+      
+      <!-- 息屏模式 -->
+      <div id="screenOffMode" class="screen-off-overlay" onclick="disableScreenOff()">
+        <div class="text-center flex flex-col items-center">
+          <div class="w-2 h-2 rounded-full bg-collector-accent breathe mx-auto mb-6"></div>
+          <p class="text-white/30 text-sm mb-2">正在采集中...</p>
+          <p class="text-white/20 text-xs mb-8">屏幕已关闭以节省电量</p>
+          <button class="px-6 py-2 rounded-full border border-white/20 text-white/50 text-xs hover:bg-white/10 transition-colors">
+            <i class="fas fa-times mr-1"></i> 退出息屏模式
+          </button>
+        </div>
+      </div>
+
+      <!-- 调试菜单 -->
+      <div id="debugModal" class="modal-overlay">
+        <div class="modal-content p-5">
+          <h3 class="font-bold text-gray-800 mb-4">调试与设置</h3>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">识别灵敏度</span>
+              <input type="range" class="w-24" value="50">
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">隐私模式(画面模糊)</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="privacyToggle" class="sr-only peer" onchange="togglePrivacy()">
+                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">摄像头切换</span>
+              <button id="cameraSwitchBtn" onclick="toggleCamera()" class="px-3 py-1 bg-gray-100 rounded text-xs text-gray-700">后置</button>
+            </div>
+          </div>
+          <button onclick="closeDebugModal()" class="w-full mt-6 py-2 bg-primary text-white rounded-lg text-sm">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 管理端页面 -->
+    <div id="adminPage" class="page bg-surface">
+      <!-- 顶部通用导航栏 -->
+      <div class="bg-primary pt-12 pb-2 px-4">
+        <div class="flex items-center justify-between h-8 mb-2">
+          <div class="flex items-center gap-2">
+            <button onclick="showPage('modeSelectPage')" class="nav-back-btn">
+              <i class="fas fa-arrow-left"></i>
+            </button>
+            
+            <!-- 多店铺切换 -->
+            <div class="relative">
+              <button onclick="toggleStoreDropdown()" class="flex items-center gap-1 text-white">
+                <h1 id="adminTitle" class="text-lg font-semibold">星巴克 - 中关村店</h1>
+                <i class="fas fa-chevron-down text-xs ml-1"></i>
+              </button>
+              <div id="storeDropdown" class="absolute top-full left-0 mt-2 w-48 bg-white rounded-lg shadow-xl z-50 hidden overflow-hidden">
+                <div onclick="switchStore('星巴克 - 中关村店')" class="px-4 py-2 hover:bg-gray-100 text-gray-800 text-sm cursor-pointer">星巴克 - 中关村店</div>
+                <div onclick="switchStore('星巴克 - 望京店')" class="px-4 py-2 hover:bg-gray-100 text-gray-800 text-sm cursor-pointer">星巴克 - 望京店</div>
+                <div class="border-t border-gray-100"></div>
+                <div onclick="alert('模拟跳转添加店铺页面')" class="px-4 py-2 text-primary text-xs font-medium flex items-center gap-2"><i class="fas fa-plus"></i> 添加新店铺</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 通知中心 -->
+          <div class="relative">
+            <button onclick="toggleNotifications()" class="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+              <i class="fas fa-bell text-white/80 text-sm"></i>
+            </button>
+            <div id="notificationDot" class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">3</div>
+            
+            <!-- 通知弹窗 -->
+            <div id="notificationPanel" class="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl z-50 hidden overflow-hidden">
+              <div class="p-3 border-b border-gray-100 flex justify-between items-center">
+                <span class="font-semibold text-gray-800 text-sm">通知中心</span>
+                <span onclick="clearNotifications()" class="text-xs text-primary cursor-pointer hover:underline">全部已读</span>
+              </div>
+              <div id="notificationList" class="max-h-60 overflow-y-auto">
+                <div class="p-3 hover:bg-gray-50 border-b border-gray-50">
+                  <div class="flex gap-2">
+                    <div class="w-2 h-2 mt-1.5 rounded-full bg-red-500"></div>
+                    <div>
+                      <p class="text-xs text-gray-800 font-medium">设备离线预警</p>
+                      <p class="text-xs text-gray-500 mt-1">侧门 B 设备已离线超过10分钟</p>
+                      <p class="text-xs text-gray-400 mt-1">10分钟前</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="p-3 hover:bg-gray-50 border-b border-gray-50">
+                  <div class="flex gap-2">
+                    <div class="w-2 h-2 mt-1.5 rounded-full bg-amber-500"></div>
+                    <div>
+                      <p class="text-xs text-gray-800 font-medium">客流高峰预警</p>
+                      <p class="text-xs text-gray-500 mt-1">当前店内人数已超过100人</p>
+                      <p class="text-xs text-gray-400 mt-1">1小时前</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 动态顶部区域 -->
+      <div id="dashboardHeader" class="bg-primary px-4 pb-4">
+        <div class="grid grid-cols-3 gap-2">
+          <div onclick="showDataDetail('today')" class="glass rounded-lg p-2 text-center cursor-pointer hover:bg-white/20 transition-colors">
+            <div class="text-white/60 text-xs mb-0.5">今日到店</div>
+            <div id="todayTotal" class="text-lg font-bold text-white count-up">1,284</div>
+            <div class="flex items-center justify-center gap-0.5">
+              <i class="fas fa-arrow-up text-green-400 text-xs" style="font-size:8px"></i>
+              <span class="text-green-400 text-xs">+12%</span>
+            </div>
+          </div>
+          <div class="glass rounded-lg p-2 text-center">
+            <div class="text-white/60 text-xs mb-0.5">当前店内</div>
+            <div id="currentInStore" class="text-lg font-bold text-white count-up">47</div>
+            <div class="w-1.5 h-1.5 rounded-full bg-green-400 mx-auto mt-1 breathe"></div>
+          </div>
+          <div class="glass rounded-lg p-2 text-center">
+            <div class="text-white/60 text-xs mb-0.5">高峰时段</div>
+            <div class="text-lg font-bold text-white">14:00</div>
+            <div class="text-white/40 text-xs mt-0.5">156人</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 标签页内容 -->
+      <div id="tabContent" class="flex-1 overflow-hidden flex flex-col">
+        <!-- Tab 1: 看板 -->
+        <div id="dashboardTab" class="tab-panel active h-full overflow-y-auto custom-scrollbar p-3 space-y-3">
+          <div class="bg-white rounded-xl p-3 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold text-gray-800 text-sm">24小时客流走势</h3>
+            </div>
+            <!-- 骨架屏 -->
+            <div id="chartSkeleton" class="w-full h-36 rounded-lg bg-gray-100 relative overflow-hidden">
+              <div class="absolute inset-0 skeleton"></div>
+            </div>
+            <!-- 图表容器 -->
+            <div id="hourlyChart" style="height: 150px; display:none;"></div>
+          </div>
+          
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-white rounded-xl p-3 shadow-sm">
+              <h3 class="font-semibold text-gray-800 text-xs mb-2">性别分布</h3>
+              <div id="genderChart" style="height: 100px;"></div>
+            </div>
+            <div class="bg-white rounded-xl p-3 shadow-sm">
+              <h3 class="font-semibold text-gray-800 text-xs mb-2">年龄分布</h3>
+              <div id="ageChart" style="height: 100px;"></div>
+            </div>
+          </div>
+          <div class="bg-white rounded-xl p-3 shadow-sm mb-16">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold text-gray-800 text-sm">实时动态</h3>
+            </div>
+            <div id="activityFeed" class="space-y-2"></div>
+          </div>
+        </div>
+
+        <!-- Tab 2: 历史 -->
+        <div id="historyTab" class="tab-panel h-full overflow-y-auto custom-scrollbar p-3 space-y-3">
+          <div class="bg-white rounded-xl p-3 shadow-sm">
+            <h3 class="font-semibold text-gray-800 text-sm mb-2">选择日期</h3>
+            <div class="grid grid-cols-7 gap-1 text-center text-xs text-gray-400 mb-1">
+              <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+            </div>
+            <div id="calendarGrid" class="grid grid-cols-7 gap-1 text-center text-xs"></div>
+          </div>
+          <div class="bg-white rounded-xl p-3 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold text-gray-800 text-sm">同比分析</h3>
+              <label class="flex items-center gap-1 text-xs">
+                <input type="checkbox" id="compareToggle" class="w-3 h-3 rounded border-gray-300 text-primary focus:ring-primary" onchange="toggleCompare()">
+                <span class="text-gray-600">对比上周</span>
+              </label>
+            </div>
+            <div id="compareChart" style="height: 150px;"></div>
+          </div>
+          <div class="bg-white rounded-xl p-3 shadow-sm mb-16">
+            <button onclick="exportData()" class="w-full py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-secondary transition-colors flex items-center justify-center gap-2">
+              <i class="fas fa-download"></i>导出报表
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 3: 设置 -->
+        <div id="settingsTab" class="tab-panel h-full overflow-y-auto custom-scrollbar p-3 space-y-3">
+          <div onclick="openAccountModal()" class="bg-white rounded-xl p-4 shadow-sm flex items-center gap-4 cursor-pointer hover:bg-gray-50 transition-colors">
+            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xl font-bold shadow-lg">
+              U
+            </div>
+            <div class="flex-1">
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-gray-800">User_8392</h3>
+                <span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">VIP</span>
+              </div>
+              <p class="text-gray-500 text-xs mt-1">ID: 10008392</p>
+              <p class="text-gray-400 text-xs mt-0.5">点击编辑个人资料</p>
+            </div>
+            <i class="fas fa-chevron-right text-gray-300"></i>
+          </div>
+
+          <!-- 预警设置 -->
+          <div class="bg-white rounded-xl p-3 shadow-sm">
+             <h3 class="font-semibold text-gray-800 text-sm mb-3">预警设置</h3>
+             <div class="space-y-3">
+               <div class="flex items-center justify-between">
+                 <span class="text-xs text-gray-600">店内人数上限预警</span>
+                 <div class="flex items-center gap-2">
+                   <input type="number" value="100" class="w-12 px-2 py-1 border border-gray-200 rounded text-xs text-center">
+                   <span class="text-xs text-gray-400">人</span>
+                 </div>
+               </div>
+               <div class="flex items-center justify-between">
+                 <span class="text-xs text-gray-600">设备离线通知</span>
+                 <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked class="sr-only peer">
+                    <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+               </div>
+             </div>
+          </div>
+
+          <div class="bg-white rounded-xl p-3 shadow-sm">
+            <h3 class="font-semibold text-gray-800 text-sm mb-2">设备管理</h3>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                    <i class="fas fa-mobile-alt text-green-600 text-xs"></i>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-800 text-xs">正门 A</div>
+                    <div class="text-xs text-gray-400">iPhone 13 Pro</div>
+                  </div>
+                </div>
+                <span class="text-xs text-green-600">在线</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-white rounded-xl p-3 shadow-sm space-y-2 mb-16">
+            <button onclick="switchMode()" class="w-full p-2 bg-gradient-to-r from-primary to-secondary text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1">
+              <i class="fas fa-exchange-alt"></i>切换至采集端
+            </button>
+            <button onclick="logout()" class="w-full p-2 bg-red-50 text-red-600 rounded-lg text-xs font-medium flex items-center justify-center gap-1">
+              <i class="fas fa-sign-out-alt"></i>退出登录
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部标签栏 -->
+      <div class="bg-white border-t border-gray-100 px-4 py-1 flex items-center justify-around relative z-10">
+        <button onclick="switchTab(0)" class="tab-btn flex flex-col items-center py-1 px-3 text-primary">
+          <i class="fas fa-chart-pie text-base mb-0.5"></i>
+          <span class="text-xs font-medium">看板</span>
+        </button>
+        <button onclick="switchTab(1)" class="tab-btn flex flex-col items-center py-1 px-3 text-gray-400">
+          <i class="fas fa-history text-base mb-0.5"></i>
+          <span class="text-xs">历史</span>
+        </button>
+        <button onclick="switchTab(2)" class="tab-btn flex flex-col items-center py-1 px-3 text-gray-400">
+          <i class="fas fa-cog text-base mb-0.5"></i>
+          <span class="text-xs">设置</span>
+        </button>
+      </div>
+      <div class="home-indicator"></div>
+
+      <!-- 数据详情弹窗 -->
+      <div id="dataDetailModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 320px; width: 90%;">
+          <div class="bg-primary p-4 text-white">
+            <div class="flex justify-between items-center">
+              <h3 class="font-bold">今日客流详情</h3>
+              <button onclick="closeDataDetail()" class="text-white/80 hover:text-white"><i class="fas fa-times"></i></button>
+            </div>
+            <p class="text-xs text-white/60 mt-1">2023-10-27</p>
+          </div>
+          <div class="p-4 max-h-64 overflow-y-auto">
+             <div class="space-y-2">
+               <div class="flex justify-between items-center text-sm">
+                 <span class="text-gray-500">09:00 - 10:00</span>
+                 <span class="font-bold text-gray-800">45 人</span>
+               </div>
+               <div class="flex justify-between items-center text-sm">
+                 <span class="text-gray-500">10:00 - 11:00</span>
+                 <span class="font-bold text-gray-800">89 人</span>
+               </div>
+               <div class="flex justify-between items-center text-sm">
+                 <span class="text-gray-500">11:00 - 12:00</span>
+                 <span class="font-bold text-primary">156 人 (Peak)</span>
+               </div>
+               <div class="flex justify-between items-center text-sm">
+                 <span class="text-gray-500">12:00 - 13:00</span>
+                 <span class="font-bold text-gray-800">120 人</span>
+               </div>
+             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 账号编辑弹窗 -->
+      <div id="accountModal" class="modal-overlay">
+        <div class="modal-content p-5">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-gray-800">编辑资料</h3>
+            <button onclick="closeAccountModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+          </div>
+          <div class="space-y-3">
+            <div class="flex justify-center">
+               <div class="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 relative cursor-pointer" onclick="alert('模拟更换头像')">
+                 <i class="fas fa-user text-3xl"></i>
+                 <div class="absolute bottom-0 right-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center text-white text-xs border-2 border-white">
+                   <i class="fas fa-camera"></i>
+                 </div>
+               </div>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500">昵称</label>
+              <input type="text" value="User_8392" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none">
+            </div>
+            <button onclick="saveAccount()" class="w-full py-2 bg-primary text-white rounded-lg text-sm mt-2">保存修改</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// 全局状态
+let isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+let currentMode = localStorage.getItem('appMode') || null;
+let isCollecting = false;
+let runTimeInterval = null;
+let runTimeSeconds = 0;
+let detectionInterval = null;
+let charts = {};
+let longPressTimer = null;
+let selectedDate = new Date().getDate(); 
+let countdownTimer = null; // 验证码倒计时
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (!isLoggedIn) {
+    showPage('loginPage', false);
+  } else if (currentMode) {
+    showPage(currentMode + 'Page', false);
+    if (currentMode === 'admin') {
+      initAdminData();
+    }
+  } else {
+    showPage('modeSelectPage', false);
+  }
+
+  // 绑定采集端长按事件
+  const collectorHeader = document.querySelector('#collectorPage .glass-dark');
+  if(collectorHeader) {
+    collectorHeader.addEventListener('mousedown', startLongPress);
+    collectorHeader.addEventListener('touchstart', startLongPress);
+    collectorHeader.addEventListener('mouseup', cancelLongPress);
+    collectorHeader.addEventListener('mouseleave', cancelLongPress);
+    collectorHeader.addEventListener('touchend', cancelLongPress);
+  }
+});
+
+function showPage(pageId, animate = true) {
+  const currentActive = document.querySelector('.page.active');
+  const targetPage = document.getElementById(pageId);
+
+  if (currentActive === targetPage) return;
+
+  if (animate && currentActive) {
+    currentActive.classList.add('exiting');
+    currentActive.classList.remove('active');
+    setTimeout(() => {
+      currentActive.classList.remove('exiting');
+    }, 300);
+  } else if (currentActive) {
+    currentActive.classList.remove('active');
+  }
+
+  targetPage.classList.add('active');
+}
+
+// 初始化管理端数据
+function initAdminData() {
+  switchTab(0, true); 
+  document.getElementById('chartSkeleton').style.display = 'block';
+  document.getElementById('hourlyChart').style.display = 'none';
+  
+  setTimeout(() => {
+    document.getElementById('chartSkeleton').style.display = 'none';
+    document.getElementById('hourlyChart').style.display = 'block';
+    initCharts(); 
+    generateCalendar();
+    generateActivityFeed();
+  }, 1000);
+}
+
+// 登录逻辑
+function handleLogin() {
+  isLoggedIn = true;
+  localStorage.setItem('isLoggedIn', 'true');
+  showPage('modeSelectPage');
+}
+
+// 忘记密码逻辑
+function handleForgotPassword() {
+  alert('模拟跳转至找回密码页面');
+}
+
+// 注册逻辑
+function handleRegister() {
+  alert('注册成功，请登录');
+  switchAuthTab('login');
+}
+
+function handleWechatLogin() {
+  isLoggedIn = true;
+  localStorage.setItem('isLoggedIn', 'true');
+  showPage('modeSelectPage');
+}
+
+// 发送验证码逻辑
+function sendCode() {
+  const btn = document.getElementById('sendCodeBtn');
+  
+  // 防止重复点击
+  if (btn.disabled) return;
+  
+  btn.disabled = true;
+  let time = 60;
+  btn.innerText = `${time}s`;
+  btn.classList.add('opacity-50'); // 添加禁用样式
+
+  countdownTimer = setInterval(() => {
+    time--;
+    if (time <= 0) {
+      clearInterval(countdownTimer);
+      btn.innerText = '获取';
+      btn.disabled = false;
+      btn.classList.remove('opacity-50');
+    } else {
+      btn.innerText = `${time}s`;
+    }
+  }, 1000);
+
+  // 模拟发送请求
+  alert('验证码已发送');
+}
+
+function selectMode(mode) {
+  currentMode = mode;
+  localStorage.setItem('appMode', mode);
+  showPage(mode + 'Page');
+  if (mode === 'admin') {
+    initAdminData();
+  }
+}
+
+function switchMode() {
+  currentMode = currentMode === 'collector' ? 'admin' : 'collector';
+  localStorage.setItem('appMode', currentMode);
+  showPage(currentMode + 'Page');
+  if (currentMode === 'admin') {
+    initAdminData();
+  }
+}
+
+function logout() {
+  localStorage.removeItem('appMode');
+  localStorage.removeItem('isLoggedIn');
+  currentMode = null;
+  isLoggedIn = false;
+  showPage('loginPage');
+}
+
+function switchAuthTab(tab) {
+  const loginTab = document.getElementById('loginTabBtn');
+  const registerTab = document.getElementById('registerTabBtn');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+
+  if (tab === 'login') {
+    loginTab.classList.add('bg-white', 'text-primary', 'shadow-sm');
+    loginTab.classList.remove('text-white/70');
+    registerTab.classList.remove('bg-white', 'text-primary', 'shadow-sm');
+    registerTab.classList.add('text-white/70');
+    loginForm.classList.remove('hidden');
+    registerForm.classList.add('hidden');
+  } else {
+    registerTab.classList.add('bg-white', 'text-primary', 'shadow-sm');
+    registerTab.classList.remove('text-white/70');
+    loginTab.classList.remove('bg-white', 'text-primary', 'shadow-sm');
+    loginTab.classList.add('text-white/70');
+    registerForm.classList.remove('hidden');
+    loginForm.classList.add('hidden');
+  }
+}
+
+// ========== 采集端功能 ==========
+function toggleCollection() {
+  isCollecting = !isCollecting;
+  const btn = document.getElementById('startBtn');
+  const scanLine = document.getElementById('scanLine');
+  
+  if (isCollecting) {
+    btn.innerHTML = '<i class="fas fa-stop mr-2"></i>停止采集';
+    btn.classList.remove('bg-collector-accent');
+    btn.classList.add('bg-red-500');
+    scanLine.style.display = 'block';
+    startCollection();
+  } else {
+    btn.innerHTML = '<i class="fas fa-play mr-2"></i>开始采集';
+    btn.classList.remove('bg-red-500');
+    btn.classList.add('bg-collector-accent');
+    scanLine.style.display = 'none';
+    stopCollection();
+  }
+}
+
+function startCollection() {
+  runTimeInterval = setInterval(() => {
+    runTimeSeconds++;
+    const hours = Math.floor(runTimeSeconds / 3600).toString().padStart(2, '0');
+    const mins = Math.floor((runTimeSeconds % 3600) / 60).toString().padStart(2, '0');
+    const secs = (runTimeSeconds % 60).toString().padStart(2, '0');
+    document.getElementById('runTime').textContent = `${hours}:${mins}:${secs}`;
+  }, 1000);
+
+  detectionInterval = setInterval(() => {
+    simulateDetection();
+  }, 1500);
+}
+
+function stopCollection() {
+  clearInterval(runTimeInterval);
+  clearInterval(detectionInterval);
+  document.getElementById('detectionLayer').innerHTML = '';
+}
+
+function simulateDetection() {
+  const layer = document.getElementById('detectionLayer');
+  layer.innerHTML = '';
+  const count = Math.floor(Math.random() * 3) + 1;
+  for (let i = 0; i < count; i++) {
+    const x = 20 + Math.random() * 60;
+    const y = 20 + Math.random() * 60;
+    const dot = document.createElement('div');
+    dot.className = 'detection-dot';
+    dot.style.left = x + '%';
+    dot.style.top = y + '%';
+    layer.appendChild(dot);
+  }
+  const currentCount = document.getElementById('currentCount');
+  currentCount.textContent = Math.floor(Math.random() * 20) + 5;
+  currentCount.classList.remove('count-up');
+  void currentCount.offsetWidth;
+  currentCount.classList.add('count-up');
+}
+
+function startLongPress(e) {
+  longPressTimer = setTimeout(() => {
+    document.getElementById('debugModal').classList.add('show');
+    if(navigator.vibrate) navigator.vibrate(50);
+  }, 700);
+}
+function cancelLongPress() {
+  clearTimeout(longPressTimer);
+}
+function closeDebugModal() {
+  document.getElementById('debugModal').classList.remove('show');
+}
+
+function togglePrivacy() {
+  const layer = document.getElementById('detectionLayer');
+  const isChecked = document.getElementById('privacyToggle').checked;
+  layer.style.filter = isChecked ? 'blur(10px)' : 'none';
+}
+
+function toggleCamera() {
+  const btn = document.getElementById('cameraSwitchBtn');
+  if(btn.innerText === '后置') {
+    btn.innerText = '前置';
+    alert('已切换至前置摄像头');
+  } else {
+    btn.innerText = '后置';
+    alert('已切换至后置摄像头');
+  }
+}
+
+function enableScreenOff() { document.getElementById('screenOffMode').classList.add('active'); }
+function disableScreenOff() { document.getElementById('screenOffMode').classList.remove('active'); }
+
+// ========== 管理端功能 ==========
+function switchTab(index, forceInit = false) {
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panels = document.querySelectorAll('.tab-panel');
+  
+  tabs.forEach((tab, i) => {
+    if (i === index) {
+      tab.classList.remove('text-gray-400');
+      tab.classList.add('text-primary');
+    } else {
+      tab.classList.remove('text-primary');
+      tab.classList.add('text-gray-400');
+    }
+  });
+
+  panels.forEach((panel, i) => {
+    panel.style.display = i === index ? 'block' : 'none';
+  });
+
+  const dashboardHeader = document.getElementById('dashboardHeader');
+  const adminTitle = document.getElementById('adminTitle');
+  
+  if (index === 0) {
+    dashboardHeader.style.display = 'block';
+    adminTitle.textContent = "星巴克 - 中关村店";
+  } else if (index === 2) {
+    dashboardHeader.style.display = 'none';
+    adminTitle.textContent = "设置";
+  } else {
+    dashboardHeader.style.display = 'none';
+    adminTitle.textContent = "历史分析";
+    setTimeout(() => {
+      if(charts.compare) {
+        charts.compare.resize();
+      } else {
+        initCompareChart();
+      }
+    }, 50);
+  }
+}
+
+function toggleNotifications() {
+  const panel = document.getElementById('notificationPanel');
+  panel.classList.toggle('hidden');
+}
+
+function clearNotifications() {
+  document.getElementById('notificationDot').style.display = 'none';
+}
+
+function toggleStoreDropdown() {
+  const dropdown = document.getElementById('storeDropdown');
+  dropdown.classList.toggle('hidden');
+}
+
+function switchStore(name) {
+  document.getElementById('adminTitle').textContent = name;
+  document.getElementById('storeDropdown').classList.add('hidden');
+}
+
+function showDataDetail(type) {
+  document.getElementById('dataDetailModal').classList.add('show');
+}
+
+function closeDataDetail() {
+  document.getElementById('dataDetailModal').classList.remove('show');
+}
+
+function openAccountModal() {
+  document.getElementById('accountModal').classList.add('show');
+}
+
+function closeAccountModal() {
+  document.getElementById('accountModal').classList.remove('show');
+}
+
+function saveAccount() {
+  alert('个人资料已保存');
+  closeAccountModal();
+}
+
+function initCharts() {
+  if (charts.hourly) {
+    charts.hourly.resize();
+    charts.gender.resize();
+    charts.age.resize();
+    return;
+  }
+  
+  const hourlyChart = echarts.init(document.getElementById('hourlyChart'));
+  const hours = [];
+  const data = [];
+  for (let i = 0; i < 24; i++) {
+    hours.push(i + ':00');
+    data.push(Math.floor(Math.random() * 100) + 20);
+  }
+  hourlyChart.setOption({
+    grid: { top: 10, right: 10, bottom: 20, left: 30 },
+    xAxis: { type: 'category', data: hours, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#999', fontSize: 8, interval: 4 } },
+    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, axisLabel: { color: '#999', fontSize: 8 } },
+    series: [{ data: data, type: 'line', smooth: true, symbol: 'none', lineStyle: { color: '#003366', width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [ { offset: 0, color: 'rgba(0,51,102,0.3)' }, { offset: 1, color: 'rgba(0,51,102,0)' } ]) } }]
+  });
+  charts.hourly = hourlyChart;
+
+  const genderChart = echarts.init(document.getElementById('genderChart'));
+  genderChart.setOption({
+    series: [{ type: 'pie', radius: ['50%', '70%'], center: ['50%', '50%'], data: [ { value: 58, name: '女', itemStyle: { color: '#ec4899' } }, { value: 42, name: '男', itemStyle: { color: '#3b82f6' } } ], label: { show: true, position: 'center', formatter: '58%\n女', fontSize: 10, fontWeight: 'bold', color: '#333' }, labelLine: { show: false } }]
+  });
+  charts.gender = genderChart;
+
+  const ageChart = echarts.init(document.getElementById('ageChart'));
+  ageChart.setOption({
+    series: [{ type: 'pie', radius: ['50%', '70%'], center: ['50%', '50%'], data: [ { value: 35, name: '18-25', itemStyle: { color: '#22c55e' } }, { value: 40, name: '26-35', itemStyle: { color: '#3b82f6' } }, { value: 15, name: '36-45', itemStyle: { color: '#f59e0b' } }, { value: 10, name: '46+', itemStyle: { color: '#8b5cf6' } } ], label: { show: true, position: 'center', formatter: '40%\n26-35', fontSize: 10, fontWeight: 'bold', color: '#333' }, labelLine: { show: false } }]
+  });
+  charts.age = ageChart;
+
+  initCompareChart();
+
+  window.addEventListener('resize', () => { Object.values(charts).forEach(chart => chart.resize()); });
+}
+
+function initCompareChart() {
+  const compareChart = echarts.init(document.getElementById('compareChart'));
+  compareChart.setOption({
+    grid: { top: 10, right: 10, bottom: 20, left: 30 },
+    xAxis: { type: 'category', data: ['8:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#999', fontSize: 8 } },
+    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, axisLabel: { color: '#999', fontSize: 8 } },
+    series: [ { name: '今日', data: [45, 89, 120, 156, 98, 134, 78], type: 'line', smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#003366', width: 2 }, itemStyle: { color: '#003366' } } ]
+  });
+  charts.compare = compareChart;
+}
+
+function generateCalendar() {
+  const grid = document.getElementById('calendarGrid');
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  
+  grid.innerHTML = '';
+  for (let i = 0; i < firstDay; i++) { grid.innerHTML += '<div class="p-1"></div>'; }
+  
+  for (let i = 1; i <= daysInMonth; i++) {
+    const isToday = i === today.getDate();
+    const isSelected = i === selectedDate;
+    const clickEvent = `onclick="selectDate(${i})"`;
+    
+    let classes = "p-1 rounded cursor-pointer transition-colors text-center ";
+    if (isSelected) {
+      classes += "bg-primary text-white font-semibold";
+    } else if (isToday) {
+      classes += "bg-gray-100 text-primary font-semibold";
+    } else {
+      classes += "hover:bg-gray-100 text-gray-700";
+    }
+    
+    grid.innerHTML += `<div class="${classes}" ${clickEvent}>${i}</div>`;
+  }
+}
+
+function selectDate(day) {
+  selectedDate = day;
+  generateCalendar(); 
+  console.log("选择了日期:", day);
+}
+
+function generateActivityFeed() {
+  const feed = document.getElementById('activityFeed');
+  const activities = [ { time: '14:32', event: '进入', count: 3, icon: 'fa-sign-in-alt', color: 'text-green-500' }, { time: '14:28', event: '离开', count: 2, icon: 'fa-sign-out-alt', color: 'text-orange-500' }, { time: '14:15', event: '进入', count: 5, icon: 'fa-sign-in-alt', color: 'text-green-500' } ];
+  feed.innerHTML = activities.map(a => `
+    <div class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-50 transition-colors">
+      <div class="w-6 h-6 rounded-full ${a.color.includes('green') ? 'bg-green-100' : 'bg-orange-100'} flex items-center justify-center">
+        <i class="fas ${a.icon} ${a.color} text-xs"></i>
+      </div>
+      <div class="flex-1">
+        <div class="text-xs text-gray-800">${a.event} <span class="font-semibold">${a.count}</span> 人</div>
+      </div>
+      <div class="text-xs text-gray-400">${a.time}</div>
+    </div>
+  `).join('');
+}
+
+function toggleCompare() {
+  const show = document.getElementById('compareToggle').checked;
+  const option = charts.compare.getOption();
+  if (show) {
+    option.series.push({ name: '上周', data: [38, 75, 98, 132, 85, 110, 65], type: 'line', smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#999', width: 2, type: 'dashed' }, itemStyle: { color: '#999' } });
+  } else {
+    option.series = [option.series[0]];
+  }
+  charts.compare.setOption(option);
+}
+
+function exportData() {
+  alert('数据导出功能：将生成Excel文件并发送到微信');
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#storeDropdown') && !e.target.closest('#adminTitle')) {
+    document.getElementById('storeDropdown').classList.add('hidden');
+  }
+  if (!e.target.closest('#notificationPanel') && !e.target.closest('.fa-bell')) {
+    document.getElementById('notificationPanel').classList.add('hidden');
+  }
+});
+
+setInterval(() => {
+  if (currentMode === 'admin' && isLoggedIn) {
+    const el = document.getElementById('currentInStore');
+    const current = parseInt(el.textContent);
+    const change = Math.floor(Math.random() * 5) - 2;
+    el.textContent = Math.max(0, current + change);
+    el.classList.remove('count-up');
+    void el.offsetWidth;
+    el.classList.add('count-up');
+  }
+}, 5000);
+</script>
+</body>
+</html>

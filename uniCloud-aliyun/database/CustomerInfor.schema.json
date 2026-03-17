@@ -1,0 +1,78 @@
+{
+	"bsonType": "object",
+	"required": [],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"storeId": {
+			"bsonType": "string",
+			"description": "店铺ID",
+			"index": true
+		},
+		"userId": {
+			"bsonType": "string",
+			"description": "用户ID",
+			"index": true
+		},
+		"gender": {
+			"bsonType": "string",
+			"description": "性别"
+		},
+		"age": {
+			"bsonType": "string",
+			"description": "年龄阶段"
+		},
+		"upperWear": {
+			"bsonType": "string",
+			"description": "上衣类型"
+		},
+		"upperColor": {
+			"bsonType": "string",
+			"description": "上衣颜色"
+		},
+		"lowerWear": {
+			"bsonType": "string",
+			"description": "下装类型"
+		},
+		"lowerColor": {
+			"bsonType": "string",
+			"description": "下装颜色"
+		},
+		"glasses": {
+			"bsonType": "string",
+			"description": "是否戴眼镜"
+		},
+		"mask": {
+			"bsonType": "string",
+			"description": "是否戴口罩"
+		},
+		"headWear": {
+			"bsonType": "string",
+			"description": "是否戴帽子"
+		},
+		"bag": {
+			"bsonType": "string",
+			"description": "是否背包"
+		},
+		"location": {
+			"bsonType": "string",
+			"description": "采集位置"
+		},
+		"timestamp": {
+			"bsonType": "string",
+			"description": "时间戳"
+		},
+		"createdAt": {
+			"bsonType": "number",
+			"description": "创建时间戳",
+			"index": true
+		}
+	}
+}
