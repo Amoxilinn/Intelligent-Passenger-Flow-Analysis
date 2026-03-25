@@ -132,7 +132,10 @@ export default {
 			privacyMode: false,
 			cameraPosition: 'front',
 			baiduConfig: {
-				accessToken: '24.1cda255fca624d93740c112f0b666085.2592000.1774279365.282335-122120011'
+				apiKey: 'ucmVTMJB7nKQczcx9SxI6HLr',
+				secretKey: 'yW3rjpByqYnecXpfIthphXbmcfg5pJE7',
+				accessToken: '',
+				tokenExpiry: null
 			},
 			cameraContext: null,
 			isCameraReady: false,
@@ -156,6 +159,7 @@ export default {
 	},
 	onLoad() {
 		this.loadUserInfo()
+		this.initBaiduToken()
 		const systemInfo = uni.getSystemInfoSync()
 		this.statusBarHeight = systemInfo.statusBarHeight || 44
 		this.debugMessage = '页面加载完成'
@@ -180,6 +184,9 @@ export default {
 	},
 	onShow() {
 		this.loadUserInfo()
+		if (!this.baiduConfig.accessToken || !this.baiduConfig.tokenExpiry || Date.now() >= this.baiduConfig.tokenExpiry) {
+			this.initBaiduToken()
+		}
 	},
 	onUnload() {
 		this.stopAllTimers()
@@ -193,6 +200,62 @@ export default {
 				if (this.currentStore) {
 					this.currentStoreName = this.currentStore.name
 				}
+			}
+		},
+		async initBaiduToken() {
+			const tokenStorageKey = 'baidu_access_token'
+			const expiryStorageKey = 'baidu_token_expiry'
+			const cachedToken = uni.getStorageSync(tokenStorageKey)
+			const cachedExpiry = uni.getStorageSync(expiryStorageKey)
+			if (cachedToken && cachedExpiry && Date.now() < cachedExpiry) {
+				this.baiduConfig.accessToken = cachedToken
+				this.baiduConfig.tokenExpiry = cachedExpiry
+				this.debugMessage = '百度Token加载成功(缓存)'
+				console.log('使用缓存的Token，有效期至:', new Date(cachedExpiry))
+				return
+			}
+			await this.refreshBaiduToken()
+		},
+		async refreshBaiduToken() {
+			try {
+				this.debugMessage = '正在获取百度Token...'
+				console.log('开始获取百度AccessToken...')
+				const tokenUrl = 'https://aip.baidubce.com/oauth/2.0/token'
+				const res = await uni.request({
+					url: tokenUrl,
+					method: 'POST',
+					data: {
+						grant_type: 'client_credentials',
+						client_id: this.baiduConfig.apiKey,
+						client_secret: this.baiduConfig.secretKey
+					},
+					header: {
+						'Content-Type': 'application/x-www-form-urlencoded'
+					}
+				})
+				console.log('Token请求响应:', res)
+				if (res.data && res.data.access_token) {
+					const expiresIn = res.data.expires_in || 2592000
+					const expiryTime = Date.now() + (expiresIn * 1000) - 60000
+					this.baiduConfig.accessToken = res.data.access_token
+					this.baiduConfig.tokenExpiry = expiryTime
+					uni.setStorageSync('baidu_access_token', res.data.access_token)
+					uni.setStorageSync('baidu_token_expiry', expiryTime)
+					this.debugMessage = '百度Token获取成功'
+					console.log('Token获取成功，有效期:', expiresIn, '秒')
+				} else {
+					console.error('Token获取失败:', res.data)
+					this.debugMessage = 'Token获取失败'
+				}
+			} catch (error) {
+				console.error('Token获取异常:', error)
+				this.debugMessage = 'Token获取异常'
+			}
+		},
+		async ensureValidToken() {
+			if (!this.baiduConfig.accessToken || !this.baiduConfig.tokenExpiry || Date.now() >= this.baiduConfig.tokenExpiry) {
+				console.log('Token无效或已过期，开始刷新...')
+				await this.refreshBaiduToken()
 			}
 		},
 		goToSettings() {
@@ -291,6 +354,7 @@ export default {
 
 		async detectBodyAttribute(imageBase64) {
 			try {
+				await this.ensureValidToken()
 				this.debugMessage = '调用人体属性识别API...'
 				console.log('调用人体属性识别API...')
 				console.log('图像Base64长度:', imageBase64.length)
@@ -348,6 +412,12 @@ export default {
 				if (response.error_code) {
 					console.error('百度AI API错误:', response.error_code, response.error_msg)
 					this.debugMessage = `API错误: ${response.error_msg || response.error_code}`
+					if ([110, 111, 112].includes(response.error_code)) {
+						console.log('检测到Token过期错误，自动刷新Token...')
+						this.debugMessage = 'Token已过期，正在刷新...'
+						await this.refreshBaiduToken()
+						return this.detectBodyAttribute(imageBase64)
+					}
 					return {
 						success: false,
 						message: `API错误: ${response.error_msg || response.error_code}`,
@@ -495,6 +565,7 @@ export default {
 
 		async detectBodyTracking(imageBase64) {
 			try {
+				await this.ensureValidToken()
 				this.debugMessage = '调用人流量统计API...'
 				console.log('调用人流量统计API...')
 				console.log('图像Base64长度:', imageBase64.length)
@@ -541,6 +612,12 @@ export default {
 				if (response.error_code) {
 					console.error('百度AI API错误:', response.error_code, response.error_msg)
 					this.debugMessage = `API错误: ${response.error_msg || response.error_code}`
+					if ([110, 111, 112].includes(response.error_code)) {
+						console.log('检测到Token过期错误，自动刷新Token...')
+						this.debugMessage = 'Token已过期，正在刷新...'
+						await this.refreshBaiduToken()
+						return this.detectBodyTracking(imageBase64)
+					}
 					return {
 						success: false,
 						message: `API错误: ${response.error_msg || response.error_code}`,

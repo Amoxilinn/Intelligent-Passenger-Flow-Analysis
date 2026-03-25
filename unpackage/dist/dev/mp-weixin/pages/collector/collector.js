@@ -24,7 +24,10 @@ const _sfc_main = {
       privacyMode: false,
       cameraPosition: "front",
       baiduConfig: {
-        accessToken: "24.1cda255fca624d93740c112f0b666085.2592000.1774279365.282335-122120011"
+        apiKey: "ucmVTMJB7nKQczcx9SxI6HLr",
+        secretKey: "yW3rjpByqYnecXpfIthphXbmcfg5pJE7",
+        accessToken: "",
+        tokenExpiry: null
       },
       cameraContext: null,
       isCameraReady: false,
@@ -48,22 +51,23 @@ const _sfc_main = {
   },
   onLoad() {
     this.loadUserInfo();
+    this.initBaiduToken();
     const systemInfo = common_vendor.index.getSystemInfoSync();
     this.statusBarHeight = systemInfo.statusBarHeight || 44;
     this.debugMessage = "页面加载完成";
-    common_vendor.index.__f__("log", "at pages/collector/collector.vue:162", "页面加载完成");
-    common_vendor.index.__f__("log", "at pages/collector/collector.vue:163", "系统信息:", systemInfo);
-    common_vendor.index.__f__("log", "at pages/collector/collector.vue:164", "初始摄像头状态 - isCameraReady:", this.isCameraReady, "cameraContext:", this.cameraContext);
+    common_vendor.index.__f__("log", "at pages/collector/collector.vue:166", "页面加载完成");
+    common_vendor.index.__f__("log", "at pages/collector/collector.vue:167", "系统信息:", systemInfo);
+    common_vendor.index.__f__("log", "at pages/collector/collector.vue:168", "初始摄像头状态 - isCameraReady:", this.isCameraReady, "cameraContext:", this.cameraContext);
     this.getDeviceLocation();
-    common_vendor.index.__f__("log", "at pages/collector/collector.vue:167", "设置延迟摄像头状态检查...");
+    common_vendor.index.__f__("log", "at pages/collector/collector.vue:171", "设置延迟摄像头状态检查...");
     this.checkCameraTimeout = setTimeout(() => {
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:169", "延迟检查摄像头状态...");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:173", "延迟检查摄像头状态...");
       if (!this.isCameraReady && this.cameraContext) {
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:171", "摄像头上下文已存在但状态未更新，手动设置就绪");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:175", "摄像头上下文已存在但状态未更新，手动设置就绪");
         this.isCameraReady = true;
         this.debugMessage = "摄像头已通过延迟检查就绪";
       } else if (!this.isCameraReady) {
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:175", "摄像头仍未就绪，尝试重新初始化");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:179", "摄像头仍未就绪，尝试重新初始化");
         this.initCamera();
         this.debugMessage = "摄像头重新初始化中...";
       }
@@ -71,6 +75,9 @@ const _sfc_main = {
   },
   onShow() {
     this.loadUserInfo();
+    if (!this.baiduConfig.accessToken || !this.baiduConfig.tokenExpiry || Date.now() >= this.baiduConfig.tokenExpiry) {
+      this.initBaiduToken();
+    }
   },
   onUnload() {
     this.stopAllTimers();
@@ -84,6 +91,62 @@ const _sfc_main = {
         if (this.currentStore) {
           this.currentStoreName = this.currentStore.name;
         }
+      }
+    },
+    async initBaiduToken() {
+      const tokenStorageKey = "baidu_access_token";
+      const expiryStorageKey = "baidu_token_expiry";
+      const cachedToken = common_vendor.index.getStorageSync(tokenStorageKey);
+      const cachedExpiry = common_vendor.index.getStorageSync(expiryStorageKey);
+      if (cachedToken && cachedExpiry && Date.now() < cachedExpiry) {
+        this.baiduConfig.accessToken = cachedToken;
+        this.baiduConfig.tokenExpiry = cachedExpiry;
+        this.debugMessage = "百度Token加载成功(缓存)";
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:214", "使用缓存的Token，有效期至:", new Date(cachedExpiry));
+        return;
+      }
+      await this.refreshBaiduToken();
+    },
+    async refreshBaiduToken() {
+      try {
+        this.debugMessage = "正在获取百度Token...";
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:222", "开始获取百度AccessToken...");
+        const tokenUrl = "https://aip.baidubce.com/oauth/2.0/token";
+        const res = await common_vendor.index.request({
+          url: tokenUrl,
+          method: "POST",
+          data: {
+            grant_type: "client_credentials",
+            client_id: this.baiduConfig.apiKey,
+            client_secret: this.baiduConfig.secretKey
+          },
+          header: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
+        });
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:236", "Token请求响应:", res);
+        if (res.data && res.data.access_token) {
+          const expiresIn = res.data.expires_in || 2592e3;
+          const expiryTime = Date.now() + expiresIn * 1e3 - 6e4;
+          this.baiduConfig.accessToken = res.data.access_token;
+          this.baiduConfig.tokenExpiry = expiryTime;
+          common_vendor.index.setStorageSync("baidu_access_token", res.data.access_token);
+          common_vendor.index.setStorageSync("baidu_token_expiry", expiryTime);
+          this.debugMessage = "百度Token获取成功";
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:245", "Token获取成功，有效期:", expiresIn, "秒");
+        } else {
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:247", "Token获取失败:", res.data);
+          this.debugMessage = "Token获取失败";
+        }
+      } catch (error) {
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:251", "Token获取异常:", error);
+        this.debugMessage = "Token获取异常";
+      }
+    },
+    async ensureValidToken() {
+      if (!this.baiduConfig.accessToken || !this.baiduConfig.tokenExpiry || Date.now() >= this.baiduConfig.tokenExpiry) {
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:257", "Token无效或已过期，开始刷新...");
+        await this.refreshBaiduToken();
       }
     },
     goToSettings() {
@@ -114,26 +177,26 @@ const _sfc_main = {
       this.showDebug = !this.showDebug;
     },
     cameraReady() {
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:222", "cameraReady事件触发");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:285", "cameraReady事件触发");
       this.debugMessage = "摄像头准备就绪";
       this.isCameraReady = true;
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:225", "isCameraReady设置为true");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:288", "isCameraReady设置为true");
       this.initCamera();
     },
     cameraError(e) {
-      common_vendor.index.__f__("error", "at pages/collector/collector.vue:229", "cameraError事件触发:", e);
+      common_vendor.index.__f__("error", "at pages/collector/collector.vue:292", "cameraError事件触发:", e);
       this.isCameraReady = false;
       this.debugMessage = "摄像头错误: " + JSON.stringify(e);
-      common_vendor.index.__f__("error", "at pages/collector/collector.vue:232", "摄像头错误:", e);
+      common_vendor.index.__f__("error", "at pages/collector/collector.vue:295", "摄像头错误:", e);
       common_vendor.index.showToast({ title: "摄像头初始化失败", icon: "none" });
     },
     initCamera() {
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:237", "开始初始化摄像头上下文...");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:300", "开始初始化摄像头上下文...");
       this.cameraContext = common_vendor.index.createCameraContext();
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:239", "摄像头上下文创建完成:", this.cameraContext ? "成功" : "失败");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:302", "摄像头上下文创建完成:", this.cameraContext ? "成功" : "失败");
       this.isCameraReady = true;
       this.debugMessage = "摄像头初始化完成";
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:242", "摄像头初始化完成，isCameraReady设置为true");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:305", "摄像头初始化完成，isCameraReady设置为true");
     },
     async getCameraImageBase64() {
       return new Promise((resolve, reject) => {
@@ -142,19 +205,19 @@ const _sfc_main = {
           return;
         }
         this.debugMessage = "正在拍照...";
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:253", "正在拍照...");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:316", "正在拍照...");
         this.cameraContext.takePhoto({
           quality: "low",
           success: (res) => {
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:258", "拍照成功:", res);
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:321", "拍照成功:", res);
             const tempFilePath = res.tempImagePath;
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:260", "临时文件路径:", tempFilePath);
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:323", "临时文件路径:", tempFilePath);
             common_vendor.index.getFileSystemManager().readFile({
               filePath: tempFilePath,
               encoding: "base64",
               success: (fileRes) => {
-                common_vendor.index.__f__("log", "at pages/collector/collector.vue:267", "读取文件成功，数据长度:", fileRes.data ? fileRes.data.length : 0);
-                common_vendor.index.__f__("log", "at pages/collector/collector.vue:268", "数据前100字符:", fileRes.data ? fileRes.data.substring(0, 100) : "无数据");
+                common_vendor.index.__f__("log", "at pages/collector/collector.vue:330", "读取文件成功，数据长度:", fileRes.data ? fileRes.data.length : 0);
+                common_vendor.index.__f__("log", "at pages/collector/collector.vue:331", "数据前100字符:", fileRes.data ? fileRes.data.substring(0, 100) : "无数据");
                 if (fileRes.data && fileRes.data.length > 100) {
                   this.debugMessage = "获取图像成功";
                   resolve(fileRes.data);
@@ -163,14 +226,14 @@ const _sfc_main = {
                 }
               },
               fail: (err) => {
-                common_vendor.index.__f__("error", "at pages/collector/collector.vue:277", "读取文件失败:", err);
+                common_vendor.index.__f__("error", "at pages/collector/collector.vue:340", "读取文件失败:", err);
                 this.debugMessage = "读取文件失败: " + err.errMsg;
                 reject(err);
               }
             });
           },
           fail: (err) => {
-            common_vendor.index.__f__("error", "at pages/collector/collector.vue:284", "拍照失败:", err);
+            common_vendor.index.__f__("error", "at pages/collector/collector.vue:347", "拍照失败:", err);
             this.debugMessage = "拍照失败: " + err.errMsg;
             reject(err);
           }
@@ -180,20 +243,21 @@ const _sfc_main = {
     async detectBodyAttribute(imageBase64) {
       var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
       try {
+        await this.ensureValidToken();
         this.debugMessage = "调用人体属性识别API...";
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:295", "调用人体属性识别API...");
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:296", "图像Base64长度:", imageBase64.length);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:359", "调用人体属性识别API...");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:360", "图像Base64长度:", imageBase64.length);
         let cleanBase64 = imageBase64;
         if (imageBase64.includes("base64,")) {
           cleanBase64 = imageBase64.split("base64,")[1];
         }
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:303", "清理后Base64长度:", cleanBase64.length);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:367", "清理后Base64长度:", cleanBase64.length);
         if (!cleanBase64 || cleanBase64.length < 100) {
-          common_vendor.index.__f__("error", "at pages/collector/collector.vue:307", "Base64数据无效，长度:", cleanBase64 ? cleanBase64.length : 0);
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:371", "Base64数据无效，长度:", cleanBase64 ? cleanBase64.length : 0);
           return { success: false, message: "Base64数据无效" };
         }
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:311", "access_token:", this.baiduConfig.accessToken);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:312", "Base64前50字符:", cleanBase64.substring(0, 50));
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:375", "access_token:", this.baiduConfig.accessToken);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:376", "Base64前50字符:", cleanBase64.substring(0, 50));
         const requestBody = "image=" + encodeURIComponent(cleanBase64) + "&type=gender,age,upper_wear,lower_wear,upper_color,lower_color,headwear,glasses,face_mask,bag,cellphone,smoke,orientation,upper_cut,lower_cut,occlusion,is_human";
         const res = await common_vendor.index.request({
           url: "https://aip.baidubce.com/rest/2.0/image-classify/v1/body_attr?access_token=" + this.baiduConfig.accessToken,
@@ -203,11 +267,11 @@ const _sfc_main = {
           },
           data: requestBody
         });
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:328", "人体属性识别API原始响应:", res);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:329", "响应状态码:", res.statusCode);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:330", "响应数据:", res.data);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:392", "人体属性识别API原始响应:", res);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:393", "响应状态码:", res.statusCode);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:394", "响应数据:", res.data);
         if (res.statusCode !== 200) {
-          common_vendor.index.__f__("error", "at pages/collector/collector.vue:334", "HTTP请求失败，状态码:", res.statusCode);
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:398", "HTTP请求失败，状态码:", res.statusCode);
           this.debugMessage = `HTTP请求失败: ${res.statusCode}`;
           return {
             success: false,
@@ -216,24 +280,30 @@ const _sfc_main = {
           };
         }
         const response = res.data || res;
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:345", "解析后响应:", response);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:409", "解析后响应:", response);
         if (response.error_code) {
-          common_vendor.index.__f__("error", "at pages/collector/collector.vue:349", "百度AI API错误:", response.error_code, response.error_msg);
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:413", "百度AI API错误:", response.error_code, response.error_msg);
           this.debugMessage = `API错误: ${response.error_msg || response.error_code}`;
+          if ([110, 111, 112].includes(response.error_code)) {
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:416", "检测到Token过期错误，自动刷新Token...");
+            this.debugMessage = "Token已过期，正在刷新...";
+            await this.refreshBaiduToken();
+            return this.detectBodyAttribute(imageBase64);
+          }
           return {
             success: false,
             message: `API错误: ${response.error_msg || response.error_code}`,
             errorCode: response.error_code
           };
         }
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:360", "=== API响应详细分析 ===");
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:361", "person_num:", response.person_num);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:362", "person_info:", JSON.stringify(response.person_info, null, 2));
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:430", "=== API响应详细分析 ===");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:431", "person_num:", response.person_num);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:432", "person_info:", JSON.stringify(response.person_info, null, 2));
         if (response.person_info && response.person_info.length > 0 && response.person_num > 0) {
           const person = response.person_info[0];
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:366", "person_info[0]:", JSON.stringify(person, null, 2));
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:436", "person_info[0]:", JSON.stringify(person, null, 2));
           const location = person.location || {};
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:370", "location对象:", location);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:440", "location对象:", location);
           const hasValidLocation = (location.left !== void 0 || location.x !== void 0) && (location.top !== void 0 || location.y !== void 0) && location.width !== void 0 && location.height !== void 0;
           const attributes = person.attributes || {};
           const hasValidAttributes = Object.keys(attributes).length > 0;
@@ -246,14 +316,14 @@ const _sfc_main = {
           const hasSevereCut = upperCut === "有上方截断" || lowerCut === "有下方截断";
           const score = person.score || person.confidence || 0;
           const hasHighConfidence = score > 0.5;
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:403", "hasValidLocation:", hasValidLocation);
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:404", "hasValidAttributes:", hasValidAttributes, "属性数量:", Object.keys(attributes).length);
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:405", "is_human:", isHuman, "isNormalHuman:", isNormalHuman);
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:406", "occlusion:", occlusion, "isHeavyOcclusion:", isHeavyOcclusion);
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:407", "upperCut:", upperCut, "lowerCut:", lowerCut, "hasSevereCut:", hasSevereCut);
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:408", "score:", score, "hasHighConfidence:", hasHighConfidence);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:473", "hasValidLocation:", hasValidLocation);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:474", "hasValidAttributes:", hasValidAttributes, "属性数量:", Object.keys(attributes).length);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:475", "is_human:", isHuman, "isNormalHuman:", isNormalHuman);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:476", "occlusion:", occlusion, "isHeavyOcclusion:", isHeavyOcclusion);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:477", "upperCut:", upperCut, "lowerCut:", lowerCut, "hasSevereCut:", hasSevereCut);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:478", "score:", score, "hasHighConfidence:", hasHighConfidence);
           if (!hasValidLocation) {
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:412", "位置信息无效，可能是误识别");
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:482", "位置信息无效，可能是误识别");
             this.debugMessage = "检测到人体但位置无效";
             return {
               success: false,
@@ -262,7 +332,7 @@ const _sfc_main = {
             };
           }
           if (!isNormalHuman) {
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:423", "非正常人体，可能是误识别或严重截断/遮挡");
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:493", "非正常人体，可能是误识别或严重截断/遮挡");
             this.debugMessage = "非正常人体: " + isHuman;
             return {
               success: false,
@@ -271,7 +341,7 @@ const _sfc_main = {
             };
           }
           if (isHeavyOcclusion) {
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:434", "重度遮挡，跳过");
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:504", "重度遮挡，跳过");
             this.debugMessage = "重度遮挡，跳过";
             return {
               success: false,
@@ -280,7 +350,7 @@ const _sfc_main = {
             };
           }
           if (score > 0 && !hasHighConfidence) {
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:445", "置信度过低，可能是误识别");
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:515", "置信度过低，可能是误识别");
             this.debugMessage = "检测置信度过低";
             return {
               success: false,
@@ -288,7 +358,7 @@ const _sfc_main = {
               personCount: 0
             };
           }
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:454", "=== 确认检测到有效人体 ===");
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:524", "=== 确认检测到有效人体 ===");
           return {
             success: true,
             personCount: response.person_num,
@@ -311,7 +381,7 @@ const _sfc_main = {
             }
           };
         } else {
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:477", "未检测到人体，响应数据:", response);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:547", "未检测到人体，响应数据:", response);
           this.debugMessage = "未检测到人体";
           return {
             success: false,
@@ -321,8 +391,8 @@ const _sfc_main = {
         }
       } catch (error) {
         this.debugMessage = "人体属性识别失败: " + error.message;
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:487", "人体属性识别失败:", error);
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:488", "错误详情:", error.errMsg || error);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:557", "人体属性识别失败:", error);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:558", "错误详情:", error.errMsg || error);
         return {
           success: false,
           message: "网络请求失败: " + (error.errMsg || error.message)
@@ -331,14 +401,15 @@ const _sfc_main = {
     },
     async detectBodyTracking(imageBase64) {
       try {
+        await this.ensureValidToken();
         this.debugMessage = "调用人流量统计API...";
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:499", "调用人流量统计API...");
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:500", "图像Base64长度:", imageBase64.length);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:570", "调用人流量统计API...");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:571", "图像Base64长度:", imageBase64.length);
         let cleanBase64 = imageBase64;
         if (imageBase64.includes("base64,")) {
           cleanBase64 = imageBase64.split("base64,")[1];
         }
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:506", "清理后Base64长度:", cleanBase64.length);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:577", "清理后Base64长度:", cleanBase64.length);
         const res = await common_vendor.index.request({
           url: "https://aip.baidubce.com/rest/2.0/image-classify/v1/body_tracking?access_token=" + this.baiduConfig.accessToken,
           method: "POST",
@@ -347,11 +418,11 @@ const _sfc_main = {
           },
           data: "image=" + encodeURIComponent(cleanBase64) + "&case_id=collector_case_001&case_init=" + (this.caseInit ? "true" : "false") + "&show=false"
         });
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:521", "人流量统计API原始响应:", res);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:522", "响应状态码:", res.statusCode);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:523", "响应数据:", res.data);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:592", "人流量统计API原始响应:", res);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:593", "响应状态码:", res.statusCode);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:594", "响应数据:", res.data);
         if (res.statusCode !== 200) {
-          common_vendor.index.__f__("error", "at pages/collector/collector.vue:527", "HTTP请求失败，状态码:", res.statusCode);
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:598", "HTTP请求失败，状态码:", res.statusCode);
           this.debugMessage = `HTTP请求失败: ${res.statusCode}`;
           return {
             success: false,
@@ -360,10 +431,16 @@ const _sfc_main = {
           };
         }
         const response = res.data || res;
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:538", "解析后响应:", response);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:609", "解析后响应:", response);
         if (response.error_code) {
-          common_vendor.index.__f__("error", "at pages/collector/collector.vue:542", "百度AI API错误:", response.error_code, response.error_msg);
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:613", "百度AI API错误:", response.error_code, response.error_msg);
           this.debugMessage = `API错误: ${response.error_msg || response.error_code}`;
+          if ([110, 111, 112].includes(response.error_code)) {
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:616", "检测到Token过期错误，自动刷新Token...");
+            this.debugMessage = "Token已过期，正在刷新...";
+            await this.refreshBaiduToken();
+            return this.detectBodyTracking(imageBase64);
+          }
           return {
             success: false,
             message: `API错误: ${response.error_msg || response.error_code}`,
@@ -372,15 +449,15 @@ const _sfc_main = {
         }
         this.caseInit = false;
         if (response.person_info && response.person_info.length > 0 && response.person_num > 0) {
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:554", "人流量统计API成功响应，检测到人数:", response.person_num, "person_info数组长度:", response.person_info.length);
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:555", "完整person_info数组:", response.person_info);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:631", "人流量统计API成功响应，检测到人数:", response.person_num, "person_info数组长度:", response.person_info.length);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:632", "完整person_info数组:", response.person_info);
           let inCount = 0;
           let outCount = 0;
           response.person_info.forEach((person, index) => {
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:561", `人流量统计 - 第${index}个人:`, person);
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:638", `人流量统计 - 第${index}个人:`, person);
             if (person.action && person.action.length > 0) {
               const action = person.action[0];
-              common_vendor.index.__f__("log", "at pages/collector/collector.vue:564", `人流量统计 - 第${index}个人动作:`, action);
+              common_vendor.index.__f__("log", "at pages/collector/collector.vue:641", `人流量统计 - 第${index}个人动作:`, action);
               if (action.type === "in") {
                 inCount++;
               } else if (action.type === "out") {
@@ -388,7 +465,7 @@ const _sfc_main = {
               }
             }
           });
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:573", "人流量统计结果 - 人数:", response.person_num, "进入:", inCount, "离开:", outCount);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:650", "人流量统计结果 - 人数:", response.person_num, "进入:", inCount, "离开:", outCount);
           return {
             success: true,
             personCount: response.person_num,
@@ -397,7 +474,7 @@ const _sfc_main = {
             persons: response.person_info
           };
         } else {
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:583", "未检测到人体跟踪数据，响应:", response);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:660", "未检测到人体跟踪数据，响应:", response);
           this.debugMessage = "未检测到人体";
           return {
             success: false,
@@ -407,8 +484,8 @@ const _sfc_main = {
         }
       } catch (error) {
         this.debugMessage = "人流量统计失败: " + error.message;
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:593", "人流量统计失败:", error);
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:594", "错误详情:", error.errMsg || error);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:670", "人流量统计失败:", error);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:671", "错误详情:", error.errMsg || error);
         return {
           success: false,
           message: "网络请求失败: " + (error.errMsg || error.message)
@@ -419,7 +496,7 @@ const _sfc_main = {
       var _a, _b, _c;
       try {
         this.debugMessage = "正在保存到云数据库...";
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:605", "正在保存到云数据库:", data);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:682", "正在保存到云数据库:", data);
         const saveData = {
           ...data,
           storeId: ((_a = this.currentStore) == null ? void 0 : _a._id) || "",
@@ -428,7 +505,7 @@ const _sfc_main = {
         };
         const customerInfor = common_vendor.tr.importObject("CustomerInfor");
         const result = await customerInfor.saveCustomerInfo(saveData);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:617", "云数据库返回:", result);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:694", "云数据库返回:", result);
         if (result.errCode === 0) {
           this.currentCount++;
           if (data.inCount)
@@ -436,7 +513,7 @@ const _sfc_main = {
           if (data.outCount)
             this.totalOutCount += data.outCount;
           this.debugMessage = "保存成功！当前: " + this.currentCount;
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:624", "保存成功，当前:", this.currentCount, "进入:", this.totalInCount, "离开:", this.totalOutCount);
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:701", "保存成功，当前:", this.currentCount, "进入:", this.totalInCount, "离开:", this.totalOutCount);
           return true;
         } else if (result.errCode === "TOKEN_MISSING" || result.errCode === "TOKEN_ERROR") {
           this.debugMessage = "登录已过期，请重新登录";
@@ -447,14 +524,14 @@ const _sfc_main = {
           return false;
         } else {
           this.debugMessage = "保存失败: " + result.errMsg;
-          common_vendor.index.__f__("error", "at pages/collector/collector.vue:635", "保存失败:", result.errMsg);
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:712", "保存失败:", result.errMsg);
           return false;
         }
       } catch (error) {
         this.debugMessage = "保存异常: " + error.message;
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:640", "保存到云数据库异常:", error);
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:641", "错误堆栈:", error.stack);
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:642", "错误详细信息:", JSON.stringify(error));
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:717", "保存到云数据库异常:", error);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:718", "错误堆栈:", error.stack);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:719", "错误详细信息:", JSON.stringify(error));
         return false;
       }
     },
@@ -477,7 +554,7 @@ const _sfc_main = {
       if (this.recentPersons.length > 100) {
         this.recentPersons = this.recentPersons.slice(-100);
       }
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:674", "记录人员检测:", fingerprint, "当前列表长度:", this.recentPersons.length);
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:751", "记录人员检测:", fingerprint, "当前列表长度:", this.recentPersons.length);
     },
     detectFrameChange(imageBase64) {
       const sampleSize = 100;
@@ -486,7 +563,7 @@ const _sfc_main = {
         samples.push(imageBase64.charCodeAt(i));
       }
       if (!this.lastFrameSamples || this.lastFrameSamples.length === 0) {
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:690", "帧变化检测 - 首次运行，保存参考帧");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:767", "帧变化检测 - 首次运行，保存参考帧");
         this.lastFrameSamples = samples;
         return false;
       }
@@ -498,18 +575,18 @@ const _sfc_main = {
         }
       }
       const similarity = sameCount / compareLength;
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:705", "帧变化检测 - 相似度:", similarity.toFixed(3), "相同点:", sameCount, "总点数:", compareLength);
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:782", "帧变化检测 - 相似度:", similarity.toFixed(3), "相同点:", sameCount, "总点数:", compareLength);
       const hasSignificantChange = similarity < 0.85;
       if (hasSignificantChange) {
         this.frameChangeCount++;
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:712", "帧变化检测 - 检测到显著变化，frameChangeCount:", this.frameChangeCount);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:789", "帧变化检测 - 检测到显著变化，frameChangeCount:", this.frameChangeCount);
         this.lastFrameSamples = samples;
       } else {
         this.frameChangeCount = 0;
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:718", "帧变化检测 - 画面无显著变化，重置计数");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:795", "帧变化检测 - 画面无显著变化，重置计数");
       }
       const result = this.frameChangeCount >= 2;
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:723", "帧变化检测 - 最终结果:", result);
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:800", "帧变化检测 - 最终结果:", result);
       return result;
     },
     simpleHash(str) {
@@ -533,40 +610,40 @@ const _sfc_main = {
         }
         return common_vendor.index.arrayBufferToBase64 ? common_vendor.index.arrayBufferToBase64(arrayBuffer) : binary;
       } catch (error) {
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:752", "arrayBufferToBase64转换失败:", error);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:829", "arrayBufferToBase64转换失败:", error);
         return "";
       }
     },
     async processFrame() {
       if (!this.isCollecting) {
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:759", "processFrame: 未在采集中，直接返回");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:836", "processFrame: 未在采集中，直接返回");
         return;
       }
       if (!this.cameraContext) {
         this.debugMessage = "等待摄像头初始化...";
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:765", "processFrame: 摄像头上下文未初始化");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:842", "processFrame: 摄像头上下文未初始化");
         return;
       }
       const now = Date.now();
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:770", "processFrame: 当前时间:", now, "上次检测时间:", this.lastDetectionTime, "间隔:", this.detectionInterval);
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:847", "processFrame: 当前时间:", now, "上次检测时间:", this.lastDetectionTime, "间隔:", this.detectionInterval);
       if (now - this.lastDetectionTime < this.detectionInterval) {
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:773", `processFrame: 间隔不足，跳过 (${now - this.lastDetectionTime}ms < ${this.detectionInterval}ms)`);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:850", `processFrame: 间隔不足，跳过 (${now - this.lastDetectionTime}ms < ${this.detectionInterval}ms)`);
         return;
       }
       try {
         this.debugMessage = "正在获取摄像头图片...";
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:779", "processFrame: 正在获取摄像头图片...");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:856", "processFrame: 正在获取摄像头图片...");
         const imageBase64 = await this.getCameraImageBase64();
         this.lastDetectionTime = now;
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:784", `processFrame: 更新lastDetectionTime: ${now}, 图像长度: ${imageBase64.length}`);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:861", `processFrame: 更新lastDetectionTime: ${now}, 图像长度: ${imageBase64.length}`);
         const hasChange = this.detectFrameChange(imageBase64);
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:787", `processFrame: 画面变化检测结果: ${hasChange}, 当前frameChangeCount: ${this.frameChangeCount}`);
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:864", `processFrame: 画面变化检测结果: ${hasChange}, 当前frameChangeCount: ${this.frameChangeCount}`);
         if (hasChange) {
           this.frameChangeCount = 0;
           this.debugMessage = "画面变动，开始识别...";
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:793", "processFrame: 画面变动，开始识别...");
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:870", "processFrame: 画面变动，开始识别...");
           const attrResult = await this.detectBodyAttribute(imageBase64);
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:798", "processFrame: 识别结果:", {
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:875", "processFrame: 识别结果:", {
             attrSuccess: attrResult == null ? void 0 : attrResult.success,
             attrData: attrResult
           });
@@ -596,7 +673,7 @@ const _sfc_main = {
             const isDuplicate = this.checkPersonDuplicate(personFingerprint, currentTime);
             if (isDuplicate) {
               this.debugMessage = "检测到重复人员，跳过计数";
-              common_vendor.index.__f__("log", "at pages/collector/collector.vue:825", "processFrame: 检测到重复人员，跳过计数:", personFingerprint);
+              common_vendor.index.__f__("log", "at pages/collector/collector.vue:902", "processFrame: 检测到重复人员，跳过计数:", personFingerprint);
             } else {
               this.recordPersonDetection(personFingerprint, currentTime);
               const saveData = {
@@ -612,38 +689,38 @@ const _sfc_main = {
                 headWear: attrs.headWear || "unknown",
                 bag: attrs.bag || "unknown"
               };
-              common_vendor.index.__f__("log", "at pages/collector/collector.vue:845", "processFrame: 准备保存的数据:", saveData);
+              common_vendor.index.__f__("log", "at pages/collector/collector.vue:922", "processFrame: 准备保存的数据:", saveData);
               await this.saveToUniCloud(saveData);
             }
           } else {
             this.debugMessage = "未检测到人体或识别失败";
-            common_vendor.index.__f__("log", "at pages/collector/collector.vue:850", "processFrame: 未检测到人体或识别失败，attrResult:", attrResult);
+            common_vendor.index.__f__("log", "at pages/collector/collector.vue:927", "processFrame: 未检测到人体或识别失败，attrResult:", attrResult);
           }
         } else {
           this.debugMessage = "画面无变化，跳过识别";
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:854", "processFrame: 画面无变化，跳过识别");
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:931", "processFrame: 画面无变化，跳过识别");
         }
       } catch (error) {
         this.errorCount++;
         this.debugMessage = `处理帧失败 (${this.errorCount}/${this.maxErrorCount}): ` + error.message;
-        common_vendor.index.__f__("error", "at pages/collector/collector.vue:859", "processFrame: 处理帧失败:", error);
+        common_vendor.index.__f__("error", "at pages/collector/collector.vue:936", "processFrame: 处理帧失败:", error);
         if (this.errorCount >= this.maxErrorCount) {
           this.debugMessage = `错误次数过多，自动停止采集`;
-          common_vendor.index.__f__("error", "at pages/collector/collector.vue:863", "processFrame: 错误次数过多，自动停止采集");
+          common_vendor.index.__f__("error", "at pages/collector/collector.vue:940", "processFrame: 错误次数过多，自动停止采集");
           this.stopCollection();
           common_vendor.index.showToast({ title: "采集异常，已自动停止", icon: "error" });
         }
       }
     },
     startCollection() {
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:871", "点击开始采集，当前isCameraReady:", this.isCameraReady);
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:872", "当前cameraContext:", this.cameraContext ? "已初始化" : "未初始化");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:948", "点击开始采集，当前isCameraReady:", this.isCameraReady);
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:949", "当前cameraContext:", this.cameraContext ? "已初始化" : "未初始化");
       if (!this.isCameraReady) {
         if (this.cameraContext) {
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:878", "摄像头上下文已存在但isCameraReady为false，自动修复状态");
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:955", "摄像头上下文已存在但isCameraReady为false，自动修复状态");
           this.isCameraReady = true;
           this.debugMessage = "摄像头状态已自动修复为就绪";
-          common_vendor.index.__f__("log", "at pages/collector/collector.vue:881", "已设置isCameraReady为true");
+          common_vendor.index.__f__("log", "at pages/collector/collector.vue:958", "已设置isCameraReady为true");
         } else {
           common_vendor.index.showToast({ title: "摄像头未就绪，请等待", icon: "none" });
           this.debugMessage = `摄像头未就绪，无法开始采集 (isCameraReady: ${this.isCameraReady}, cameraContext: ${this.cameraContext ? "已初始化" : "未初始化"})`;
@@ -660,7 +737,7 @@ const _sfc_main = {
       this.lastDetectionTime = 0;
       this.caseInit = true;
       this.debugMessage = "开始采集...";
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:901", "开始采集...");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:978", "开始采集...");
       this.timer = setInterval(() => {
         this.runSeconds++;
         this.updateRunTime();
@@ -677,7 +754,7 @@ const _sfc_main = {
     stopCollection() {
       this.isCollecting = false;
       this.debugMessage = "已停止采集";
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:921", "已停止采集");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:998", "已停止采集");
       this.stopAllTimers();
       this.detectionDots = [];
     },
@@ -708,32 +785,32 @@ const _sfc_main = {
       this.showScreenOff = false;
     },
     checkCameraState() {
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:952", "手动检查摄像头状态...");
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:953", "当前isCameraReady:", this.isCameraReady);
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:954", "当前cameraContext:", this.cameraContext ? "已初始化" : "未初始化");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:1029", "手动检查摄像头状态...");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:1030", "当前isCameraReady:", this.isCameraReady);
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:1031", "当前cameraContext:", this.cameraContext ? "已初始化" : "未初始化");
       if (this.cameraContext) {
         this.debugMessage = "摄像头上下文已存在，尝试手动设置就绪状态";
         this.isCameraReady = true;
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:959", "已手动设置isCameraReady为true");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:1036", "已手动设置isCameraReady为true");
       } else {
         this.debugMessage = "摄像头上下文未初始化，尝试重新初始化";
-        common_vendor.index.__f__("log", "at pages/collector/collector.vue:962", "尝试重新初始化摄像头...");
+        common_vendor.index.__f__("log", "at pages/collector/collector.vue:1039", "尝试重新初始化摄像头...");
         this.initCamera();
       }
       common_vendor.index.showToast({ title: "摄像头状态检查完成", icon: "none" });
     },
     forceCameraReady() {
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:969", "强制设置摄像头为就绪状态");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:1046", "强制设置摄像头为就绪状态");
       this.isCameraReady = true;
       this.debugMessage = "摄像头已强制设置为就绪状态";
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:972", "isCameraReady设置为true");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:1049", "isCameraReady设置为true");
       common_vendor.index.showToast({ title: "摄像头已强制就绪", icon: "success" });
     },
     async getDeviceLocation() {
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:979", "使用静态位置（位置权限配置问题临时解决方案）");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:1056", "使用静态位置（位置权限配置问题临时解决方案）");
       this.currentLocation = "采集点A";
       this.debugMessage = "位置已设置为静态值: 采集点A";
-      common_vendor.index.__f__("log", "at pages/collector/collector.vue:982", "设备位置: 静态位置 - 采集点A");
+      common_vendor.index.__f__("log", "at pages/collector/collector.vue:1059", "设备位置: 静态位置 - 采集点A");
     }
   }
 };

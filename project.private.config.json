@@ -2,13 +2,20 @@
   "libVersion": "3.14.2",
   "projectname": "%E6%99%BA%E8%83%BD%E5%AE%A2%E6%B5%81%E5%88%86%E6%9E%90-%E7%94%A8%E6%88%B7%E7%AB%AF",
   "setting": {
-    "urlCheck": true,
+    "urlCheck": false,
     "coverView": true,
     "lazyloadPlaceholderEnable": false,
     "skylineRenderEnable": false,
     "preloadBackgroundData": false,
     "autoAudits": false,
     "showShadowRootInWxmlPanel": true,
-    "compileHotReLoad": true
+    "compileHotReLoad": true,
+    "useApiHook": true,
+    "useStaticServer": false,
+    "useLanDebug": false,
+    "showES6CompileOption": false,
+    "checkInvalidKey": true,
+    "ignoreDevUnusedFiles": true,
+    "bigPackageSizeSupport": false
   }
 }
